@@ -1,0 +1,33 @@
+{
+  "name": "vroid-ai",
+  "version": "1.0.0",
+  "description": "Deepgram Flux TTS + VRM avatar pipeline for generating VTuber-style work content videos.",
+  "main": "./prod/index.js",
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src test --max-warnings 0",
+    "start": "op run --env-file=prod.env -- node prod/index.js",
+    "test": "vitest run --coverage"
+  },
+  "keywords": [],
+  "author": "Naomi Carrigan",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@nhcarrigan/eslint-config": "5.2.0",
+    "@nhcarrigan/typescript-config": "4.0.0",
+    "@types/node": "25.2.0",
+    "@types/three": "0.186.0",
+    "@vitest/coverage-v8": "4.0.18",
+    "eslint": "9.39.2",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "5.11.0",
+    "@pixiv/three-vrm": "3.5.5",
+    "playwright": "1.63.0",
+    "three": "0.186.0"
+  }
+}
