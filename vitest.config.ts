@@ -17,6 +17,7 @@ export default defineConfig({
         "src/types/**",
         "src/index.ts",
         "src/render/createPlaywrightVrmScenePage.ts",
+        "src/render/createSystemFfmpegRunner.ts",
       ],
       include:  [ "src/**/*.ts" ],
       provider: "v8",

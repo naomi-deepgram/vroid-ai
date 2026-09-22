@@ -36,34 +36,58 @@ integration point is also implemented now, split across two files in
   the piece that's actually unit tested with 100% coverage, same DI
   pattern as `createDeepgramFluxTtsClient.ts`.
 
-One genuine integration point is still unimplemented and only exists as
-an injectable interface so the surrounding logic could be unit tested
-without it:
+The `VideoEncoder` integration point is implemented too, also split
+across two files in `src/render/`:
 
-1. A concrete `VideoEncoder` (see `src/render/renderVrmVideo.ts`) that
-   shells out to `ffmpeg` to mux the captured frames with the Flux TTS
-   audio.
+- `createFfmpegVideoEncoder.ts` is the pure orchestration layer: given
+  the rendered frames and audio, it writes each frame's PNG bytes and
+  the audio track to a temp directory, builds an `ffconcat` list with
+  the correct per-frame duration (working around ffmpeg's concat-demuxer
+  quirk where a listed file's `duration` line actually applies to the
+  *next* file, so the last frame has to be listed twice), hands the
+  built argument list to an injected `FfmpegRunner`, and always cleans
+  the temp directory back up afterwards. Unit tested with 100% coverage
+  using a fake `FfmpegRunner`, same DI pattern as the other two
+  integration points.
+- `createSystemFfmpegRunner.ts` is the real integration: it shells out
+  to an actual `ffmpeg` binary on `PATH` via `node:child_process`.
 
-Do not treat the `VideoEncoder` interface in `renderVrmVideo.ts` as
-done just because it is typed and tested. The mocked tests only prove
-the orchestration logic is correct, not that a real video comes out.
-`createPlaywrightVrmScenePage.ts` used to be in that same
-typed-but-unproven state; it no longer is, because real rendering
-against an actual VRM 0.0 model is proven in
-`test/render/createPlaywrightVrmScenePage.spec.ts`.
+Every integration point this scaffold originally needed is now
+implemented. Do not assume "implemented" already means "proven",
+though: a mocked orchestration test only proves the wiring is correct,
+not that ffmpeg actually accepts the arguments built for it or that a
+real video comes out playable. That gap is closed the same way it was
+for `createPlaywrightVrmScenePage.ts`: real encoding against a real
+`ffmpeg` binary is proven in
+`test/render/createSystemFfmpegRunner.spec.ts`, which mux-tests a tiny
+synthetic PNG sequence and a synthetic silent WAV into a real `.mp4` and
+checks its output bytes.
 
-### The `.vrm` fixture
+### Real dependencies this suite conditionally needs
 
-That real-rendering test needs an actual `.vrm` file, which is a
-personal asset, not code, so it is deliberately **not** committed:
-supply your own locally at `test/fixtures/naomi.vrm` (gitignored) to
-run it. The test uses `describe.skipIf` and skips gracefully if that
-file is absent, and `vitest.config.ts`'s coverage `exclude` list carves
-`createPlaywrightVrmScenePage.ts` itself out of the 100% threshold for
-the same reason: on a clone or CI runner without the fixture, that file
-gets no coverage at all rather than a false one. Locally, with the
-fixture present, it genuinely is exercised end to end, screenshot pixel
-comparison included.
+Two tests need something real that this repository doesn't (and, in the
+`.vrm` file's case, can't) guarantee is present, so both skip gracefully
+via `describe.skipIf` when their dependency is missing, and
+`vitest.config.ts`'s coverage `exclude` list carves the one file each
+test exercises out of the 100% threshold for the same reason: on a
+clone or CI runner without that dependency, that one file gets no
+coverage at all rather than a false one.
+
+- `test/render/createPlaywrightVrmScenePage.spec.ts` needs an actual
+  `.vrm` file, which is a personal asset, not code, so it is
+  deliberately **not** committed: supply your own locally at
+  `test/fixtures/naomi.vrm` (gitignored) to run it.
+- `test/render/createSystemFfmpegRunner.spec.ts` needs a real `ffmpeg`
+  binary on `PATH`. Unlike the `.vrm` file, this is a normal system
+  dependency that could be installed in CI (this repo's Gitea workflow
+  doesn't currently do that), rather than something that can never
+  exist in a fresh clone; tighten this back to an unconditional test if
+  the CI runner is confirmed to have `ffmpeg` installed.
+
+Locally, with both dependencies present, both tests genuinely exercise
+their file end to end: screenshot pixel comparison for the VRM scene
+page, and real `ffmpeg` muxing (verified via the output file's `ftyp`
+box) for the encoder.
 
 Also outstanding: `prod.env` references
 `op://Environment Variables - Naomi/Vroid AI/deepgram_api_key`, which
