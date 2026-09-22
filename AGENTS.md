@@ -4,26 +4,27 @@
 
 Vroid AI turns a script and a `.vrm` avatar model into a lip-synced,
 gently-animated video, for producing VTuber-style work content. The
-pipeline: Deepgram Flux TTS synthesises the dialogue and returns
-word-level timing, that timing gets split into naive phoneme clusters
-and mapped to VRM viseme blend shapes, a headless renderer drives a
-`@pixiv/three-vrm` scene frame-by-frame, and ffmpeg muxes the captured
-frames with the TTS audio into a final video.
+pipeline: Deepgram Flux TTS synthesises the dialogue, that audio is
+immediately re-transcribed with Deepgram Listen to recover word-level
+timing (Flux TTS's `/v2/speak` endpoint itself only reports total audio
+duration, not per-word timestamps), that timing gets split into naive
+phoneme clusters and mapped to VRM viseme blend shapes, a headless
+renderer drives a `@pixiv/three-vrm` scene frame-by-frame, and ffmpeg
+muxes the captured frames with the TTS audio into a final video.
 
 ## Current Status
 
 The pure pipeline logic (lip sync timing, expression weights, idle
 motion, the Flux TTS response adapter) is fully implemented and tested.
-Three integration points are still unimplemented and only exist as
-injectable interfaces so the surrounding logic could be unit tested
-without them:
+The `FluxTtsClient` integration point is also implemented now, in
+`src/tts/createDeepgramFluxTtsClient.ts`. Two integration points are
+still unimplemented and only exist as injectable interfaces so the
+surrounding logic could be unit tested without them:
 
-1. A concrete `FluxTtsClient` (see `src/tts/requestFluxTtsAudio.ts`)
-   backed by `@deepgram/sdk`'s `/v2/speak` call.
-2. A concrete `FrameRenderer` (see `src/render/renderVrmVideo.ts`) that
+1. A concrete `FrameRenderer` (see `src/render/renderVrmVideo.ts`) that
    drives a headless Playwright page running `@pixiv/three-vrm` against
    a real `.vrm` file and captures its canvas.
-3. A concrete `VideoEncoder` (same file) that shells out to `ffmpeg` to
+2. A concrete `VideoEncoder` (same file) that shells out to `ffmpeg` to
    mux the captured frames with the Flux TTS audio.
 
 Do not treat the interfaces in `renderVrmVideo.ts` as done just because
