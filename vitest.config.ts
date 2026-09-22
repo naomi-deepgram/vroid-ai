@@ -16,6 +16,7 @@ export default defineConfig({
         "*.config.*",
         "src/types/**",
         "src/index.ts",
+        "src/render/createPlaywrightVrmScenePage.ts",
       ],
       include:  [ "src/**/*.ts" ],
       provider: "v8",

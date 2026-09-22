@@ -16,20 +16,54 @@ muxes the captured frames with the TTS audio into a final video.
 
 The pure pipeline logic (lip sync timing, expression weights, idle
 motion, the Flux TTS response adapter) is fully implemented and tested.
-The `FluxTtsClient` integration point is also implemented now, in
-`src/tts/createDeepgramFluxTtsClient.ts`. Two integration points are
-still unimplemented and only exist as injectable interfaces so the
-surrounding logic could be unit tested without them:
+The `FluxTtsClient` integration point is implemented in
+`src/tts/createDeepgramFluxTtsClient.ts`. The `FrameRenderer`
+integration point is also implemented now, split across two files in
+`src/render/`:
 
-1. A concrete `FrameRenderer` (see `src/render/renderVrmVideo.ts`) that
-   drives a headless Playwright page running `@pixiv/three-vrm` against
-   a real `.vrm` file and captures its canvas.
-2. A concrete `VideoEncoder` (same file) that shells out to `ffmpeg` to
-   mux the captured frames with the Flux TTS audio.
+- `createPlaywrightVrmScenePage.ts` is the real integration: it starts
+  a tiny local HTTP server (serving the `three` and `@pixiv/three-vrm`
+  ESM builds plus a given `.vrm` file), launches headless Chromium with
+  software-rendering flags (this sandbox has no GPU), loads the model
+  with `@pixiv/three-vrm`'s `VRMLoaderPlugin`, and exposes an
+  `applyFrame`/`captureFrame` page. It handles VRM 0.0 models
+  transparently (`VRMUtils.rotateVRM0`, legacy `blendShapeMaster`
+  presets) as well as VRM 1.0.
+- `createVrmPageFrameRenderer.ts` is the pure orchestration layer: it
+  looks up the active viseme for a timestamp (`findActiveViseme.ts`),
+  converts it to expression weights, computes the idle motion offset,
+  and hands both to a `VrmScenePage` to apply and capture. This is
+  the piece that's actually unit tested with 100% coverage, same DI
+  pattern as `createDeepgramFluxTtsClient.ts`.
 
-Do not treat the interfaces in `renderVrmVideo.ts` as done just because
-they are typed and tested. The mocked tests only prove the
-orchestration logic is correct, not that a real video comes out.
+One genuine integration point is still unimplemented and only exists as
+an injectable interface so the surrounding logic could be unit tested
+without it:
+
+1. A concrete `VideoEncoder` (see `src/render/renderVrmVideo.ts`) that
+   shells out to `ffmpeg` to mux the captured frames with the Flux TTS
+   audio.
+
+Do not treat the `VideoEncoder` interface in `renderVrmVideo.ts` as
+done just because it is typed and tested. The mocked tests only prove
+the orchestration logic is correct, not that a real video comes out.
+`createPlaywrightVrmScenePage.ts` used to be in that same
+typed-but-unproven state; it no longer is, because real rendering
+against an actual VRM 0.0 model is proven in
+`test/render/createPlaywrightVrmScenePage.spec.ts`.
+
+### The `.vrm` fixture
+
+That real-rendering test needs an actual `.vrm` file, which is a
+personal asset, not code, so it is deliberately **not** committed:
+supply your own locally at `test/fixtures/naomi.vrm` (gitignored) to
+run it. The test uses `describe.skipIf` and skips gracefully if that
+file is absent, and `vitest.config.ts`'s coverage `exclude` list carves
+`createPlaywrightVrmScenePage.ts` itself out of the 100% threshold for
+the same reason: on a clone or CI runner without the fixture, that file
+gets no coverage at all rather than a false one. Locally, with the
+fixture present, it genuinely is exercised end to end, screenshot pixel
+comparison included.
 
 Also outstanding: `prod.env` references
 `op://Environment Variables - Naomi/Vroid AI/deepgram_api_key`, which
