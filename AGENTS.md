@@ -121,11 +121,22 @@ script, split across three more files at the top of `src/`:
 - `cli.ts` is the actual entry point `pnpm start` runs: it reads
   `<dialogueText> <vrmFilePath> <outputPath>` from argv and
   `DEEPGRAM_API_KEY` from the environment, and calls
-  `runVroidPipeline`. Its argv/env parsing (`parseCliOptions`) is a
-  pure function and is unit tested directly; running the pipeline
-  itself is guarded behind an `import.meta.url === process.argv[1]`
-  check so importing this file in a test (to reach `parseCliOptions`)
-  never also kicks off a real pipeline run.
+  `runVroidPipeline`. With no positional arguments at all, `pnpm start`
+  just works instead of printing a usage error: it falls back to
+  reading dialogue from `./data/script.md` (verbatim, trimmed; its
+  `.md` extension is only a convenience for editing it, not a signal
+  to strip Markdown out of it), the model from `./data/model.vrm`, and
+  writing to `./data/output.mp4`. `data/` is gitignored except
+  `data/.gitkeep`, since the script and model are personal content, not
+  code (same reasoning as the `.vrm` test fixture). Its argv/env/file
+  parsing (`parseCliOptions`) has its file-system access
+  (`fileExists`/`readScriptFile`) injected exactly like the real
+  integration points above, so its `./data/` fallback is unit tested
+  without touching this project's own real `./data/` files; running
+  the pipeline itself is guarded behind an
+  `import.meta.url === process.argv[1]` check so importing this file
+  in a test (to reach `parseCliOptions`) never also kicks off a real
+  pipeline run.
 
 The whole pipeline has been proven end to end for real, not just
 per-integration-point: `test/runVroidPipeline.spec.ts` calls
@@ -136,18 +147,19 @@ genuine playable `.mp4`. Like the other two real tests, it skips via
 `DEEPGRAM_API_KEY` environment variable, the fixture, `ffmpeg`) is
 missing, and `runVroidPipeline.ts` (though not `cli.ts`; see above) is
 carved out of the coverage threshold in `vitest.config.ts` for the
-same reason: `deepgram_api_key` still doesn't exist in Naomi's own
-1Password (see below), so a fresh clone or CI runner won't have a key
-by default even once it also has the `.vrm` fixture and `ffmpeg`.
+same reason: a fresh clone or CI runner still won't have a `.vrm`
+fixture or `ffmpeg` by default, even now that a real key is wired in
+(see below).
 
-Also outstanding: `prod.env` references
-`op://Environment Variables - Naomi/Vroid AI/deepgram_api_key`, which
-does not exist in 1Password yet. Create that item and field before
-`pnpm start` can do anything real. (Hikari's own credentials include a
-personal `Deepgram Token` field, used to write and verify
-`runVroidPipeline.spec.ts` above, but that's Hikari's own token, not a
-substitute for Naomi's project having its own key wired into
-`prod.env` for real, ongoing use.)
+`prod.env` sets `DEEPGRAM_API_KEY` from
+`op://Hikari/OpenCode Credentials/Deepgram Token`, at Naomi's explicit
+direction: this is Hikari's own personal Deepgram token, used directly
+as this project's real, ongoing credential rather than Naomi
+provisioning a separate key of her own for it. `pnpm run start` and
+`test/runVroidPipeline.spec.ts` both resolve it the same way, via
+`op run`/an `op` session with access to Hikari's vault. Confirmed
+working end to end via the real `pnpm run start --` invocation, not
+just in isolation.
 
 ## Commands
 

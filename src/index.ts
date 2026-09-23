@@ -34,19 +34,26 @@
  * dependency is available locally (a .vrm fixture, and an "ffmpeg" on
  * PATH, respectively); see AGENTS.md.
  *
- * GenerateVroidVideo.ts wires those three integration points together
- * (via createVrmPageFrameRenderer and renderVrmVideo) into the actual
- * script-to-video pipeline, fully dependency-injected and unit tested
- * like everything else. RunVroidPipeline.ts is the real composition
- * root that builds those dependencies for real (a real Deepgram
- * client, a real Playwright-rendered VRM scene, a real ffmpeg process)
- * and calls it; cli.ts parses argv/the DEEPGRAM_API_KEY environment
- * variable and calls that. Both are excluded from this project's
- * coverage threshold and are not independently tested, unlike the
- * three integration points above: proving them would need a real
- * Deepgram API key, which prod.env references but which does not exist
- * in 1Password yet (again, see AGENTS.md), on top of the real .vrm
- * file and ffmpeg binary the other two real tests already need.
+ * The file generateVroidVideo.ts wires those three integration points
+ * together (via createVrmPageFrameRenderer and renderVrmVideo) into
+ * the actual script-to-video pipeline, fully dependency-injected and
+ * unit tested like everything else. RunVroidPipeline.ts is the real
+ * composition root that builds those dependencies for real (a real
+ * Deepgram client, a real Playwright-rendered VRM scene, a real ffmpeg
+ * process) and calls it; cli.ts parses argv and the DEEPGRAM_API_KEY
+ * environment variable and calls that. The whole pipeline is proven
+ * end to end for real in test/runVroidPipeline.spec.ts, the same way
+ * as the three integration points above; see AGENTS.md for what that
+ * test needs to run (and for what prod.env's DEEPGRAM_API_KEY actually
+ * resolves to). RunVroidPipeline.ts is still excluded from this
+ * project's coverage threshold for the same reason those other real
+ * tests' files are: a fresh clone or CI runner won't have the real
+ * .vrm fixture or ffmpeg binary that test also needs by default.
+ * Cli.ts stays excluded too, but for an unrelated reason: only its
+ * pure parseCliOptions is unit tested (see test/cli.spec.ts); actually
+ * executing main() is deliberately not covered by any test, real or
+ * mocked, so that running the test suite itself can never accidentally
+ * trigger a real pipeline run.
  */
 
 export {

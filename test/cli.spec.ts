@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseCliOptions } from "../src/cli.js";
 
 describe("parseCliOptions", () => {
-  it("should parse complete argv and environment into options", () => {
+  it("should parse complete argv and environment into options", async() => {
     expect.assertions(1);
 
     const argv = [
@@ -25,7 +25,7 @@ describe("parseCliOptions", () => {
     ];
     const environment = { DEEPGRAM_API_KEY: "test-key" };
 
-    expect(parseCliOptions(argv, environment)).toStrictEqual({
+    await expect(parseCliOptions(argv, environment)).resolves.toStrictEqual({
       deepgramApiKey: "test-key",
       dialogueText:   "Hello there.",
       outputPath:     "/tmp/out.mp4",
@@ -33,7 +33,7 @@ describe("parseCliOptions", () => {
     });
   });
 
-  it("should drop a leading -- inserted by \"pnpm run start --\"", () => {
+  it("should drop a leading -- inserted by \"pnpm run start --\"", async() => {
     expect.assertions(1);
 
     const argv = [
@@ -46,7 +46,7 @@ describe("parseCliOptions", () => {
     ];
     const environment = { DEEPGRAM_API_KEY: "test-key" };
 
-    expect(parseCliOptions(argv, environment)).toStrictEqual({
+    await expect(parseCliOptions(argv, environment)).resolves.toStrictEqual({
       deepgramApiKey: "test-key",
       dialogueText:   "Hello there.",
       outputPath:     "/tmp/out.mp4",
@@ -54,14 +54,14 @@ describe("parseCliOptions", () => {
     });
   });
 
-  it("should print usage and return null when argv is incomplete", () => {
+  it("should print usage and return null when argv is incomplete", async() => {
     expect.assertions(2);
 
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
       return undefined;
     });
 
-    const result = parseCliOptions(
+    const result = await parseCliOptions(
       [ "node", "cli.js", "Hello there." ],
       { DEEPGRAM_API_KEY: "test-key" },
     );
@@ -74,14 +74,14 @@ describe("parseCliOptions", () => {
     consoleError.mockRestore();
   });
 
-  it("should report a missing API key and return null", () => {
+  it("should report a missing API key and return null", async() => {
     expect.assertions(2);
 
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
       return undefined;
     });
 
-    const result = parseCliOptions(
+    const result = await parseCliOptions(
       [ "node", "cli.js", "Hello there.", "/tmp/model.vrm", "/tmp/out.mp4" ],
       {},
     );
@@ -89,6 +89,93 @@ describe("parseCliOptions", () => {
     expect(result).toBeNull();
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("DEEPGRAM_API_KEY"),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("should fall back to ./data/ with no positional arguments", async() => {
+    expect.assertions(2);
+
+    const fileExists = vi.fn().mockReturnValue(true);
+    const readScriptFile = vi.fn().mockResolvedValue("  Hi there!  \n");
+
+    const result = await parseCliOptions(
+      [ "node", "cli.js" ],
+      { DEEPGRAM_API_KEY: "test-key" },
+      { fileExists, readScriptFile },
+    );
+
+    expect(result).toStrictEqual({
+      deepgramApiKey: "test-key",
+      dialogueText:   "Hi there!",
+      outputPath:     "./data/output.mp4",
+      vrmFilePath:    "./data/model.vrm",
+    });
+    expect(fileExists).toHaveBeenCalledWith("./data/model.vrm");
+  });
+
+  it("should treat a lone -- as no arguments at all", async() => {
+    expect.assertions(1);
+
+    const fileExists = vi.fn().mockReturnValue(true);
+    const readScriptFile = vi.fn().mockResolvedValue("Hi there!");
+
+    const result = await parseCliOptions(
+      [ "node", "cli.js", "--" ],
+      { DEEPGRAM_API_KEY: "test-key" },
+      { fileExists, readScriptFile },
+    );
+
+    expect(result).toStrictEqual({
+      deepgramApiKey: "test-key",
+      dialogueText:   "Hi there!",
+      outputPath:     "./data/output.mp4",
+      vrmFilePath:    "./data/model.vrm",
+    });
+  });
+
+  it("should report a missing ./data/model.vrm and return null", async() => {
+    expect.assertions(2);
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
+      return undefined;
+    });
+    const fileExists = vi.fn().mockReturnValue(false);
+    const readScriptFile = vi.fn();
+
+    const result = await parseCliOptions(
+      [ "node", "cli.js" ],
+      { DEEPGRAM_API_KEY: "test-key" },
+      { fileExists, readScriptFile },
+    );
+
+    expect(result).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("./data/model.vrm"),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("should report an unreadable ./data/script.md as null", async() => {
+    expect.assertions(2);
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
+      return undefined;
+    });
+    const fileExists = vi.fn().mockReturnValue(true);
+    const readScriptFile = vi.fn().mockRejectedValue(new Error("ENOENT"));
+
+    const result = await parseCliOptions(
+      [ "node", "cli.js" ],
+      { DEEPGRAM_API_KEY: "test-key" },
+      { fileExists, readScriptFile },
+    );
+
+    expect(result).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("./data/script.md"),
     );
 
     consoleError.mockRestore();

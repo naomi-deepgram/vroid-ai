@@ -2,3 +2,5 @@ node_modules
 prod
 coverage
 test/fixtures
+data/*
+!data/.gitkeep

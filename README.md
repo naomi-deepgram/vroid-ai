@@ -19,36 +19,61 @@ Given a script and a `.vrm` avatar model, the pipeline:
 
 ## Current status
 
-The pure pipeline logic (lip sync timing, expression weights, idle
-motion, the Flux TTS response adapter) is fully implemented and
-tested, with 100% coverage.
+Every part of the pipeline is implemented, tested, and wired into a
+runnable script: the pure lip sync/rendering logic, a Deepgram-backed
+`FluxTtsClient`, a headless-Playwright-backed `FrameRenderer`, and an
+ffmpeg-backed `VideoEncoder`. Real rendering and real encoding are
+each proven against an actual `.vrm` model and a real `ffmpeg` binary,
+not just mocked; see `AGENTS.md` for the details and for what those
+tests need to run locally.
 
-Three integration points remain unimplemented. They exist only as
-injectable interfaces so the surrounding logic could be unit tested
-without them:
+## Setup
 
-- A concrete `FluxTtsClient` (see `src/tts/requestFluxTtsAudio.ts`)
-  backed by `@deepgram/sdk`'s `/v2/speak` call.
-- A concrete `FrameRenderer` (see `src/render/renderVrmVideo.ts`) that
-  drives a headless Playwright page running `@pixiv/three-vrm` against
-  a real `.vrm` file and captures its canvas.
-- A concrete `VideoEncoder` (same file) that shells out to `ffmpeg` to
-  mux the captured frames with the Flux TTS audio.
+```bash
+source ~/.nvm/nvm.sh   # if node/pnpm aren't already on PATH
+pnpm install
+npx playwright install # downloads the headless Chromium the renderer needs
+```
 
-`prod.env` also references
-`op://Environment Variables - Naomi/Vroid AI/deepgram_api_key`, which
-does not yet exist in 1Password.
+You'll also need a system `ffmpeg` on `PATH`.
+
+`prod.env` (safe to commit; it only holds 1Password references) sets
+`DEEPGRAM_API_KEY` from `op://Hikari/OpenCode Credentials/Deepgram
+Token`. Running `pnpm run start` needs an `op` session with access to
+that vault.
+
+## Usage
+
+With no arguments, `pnpm start` reads dialogue from `./data/script.md`,
+the avatar from `./data/model.vrm`, and writes the result to
+`./data/output.mp4`:
+
+```bash
+pnpm run build
+pnpm run start
+```
+
+`data/` is gitignored (aside from `data/.gitkeep`): the script and
+model are personal content, not code, so add your own before running
+this. `./data/script.md`'s contents are used verbatim as the dialogue
+text; its `.md` extension is just a convenience for editing it, not a
+signal that Markdown syntax gets stripped out of it.
+
+You can also pass an explicit dialogue, model, and output path instead
+of using `./data/`:
+
+```bash
+pnpm run start -- "Your dialogue here." /path/to/model.vrm /path/to/output.mp4
+```
 
 ## Commands
-
-Source nvm first if Node tools are not on `PATH`: `source ~/.nvm/nvm.sh`
 
 ```bash
 pnpm install       # install dependencies
 pnpm run build     # tsc build to ./prod
 pnpm run lint      # eslint src test --max-warnings 0
 pnpm run test      # vitest run --coverage
-pnpm run start     # op run --env-file=prod.env -- node prod/index.js
+pnpm run start     # op run --env-file=prod.env -- node prod/cli.js
 ```
 
 Run `pnpm run lint && pnpm run build && pnpm run test` before
