@@ -5,6 +5,7 @@
  */
 
 /* eslint-disable vitest/valid-expect -- Test expectations don't need messages */
+/* eslint-disable max-lines-per-function -- Test suites naturally have many cases */
 /* eslint-disable max-nested-callbacks -- Vitest structure requires nesting */
 /* eslint-disable @typescript-eslint/naming-convention -- DEEPGRAM_API_KEY is a real environment variable name */
 
@@ -18,6 +19,27 @@ describe("parseCliOptions", () => {
     const argv = [
       "node",
       "cli.js",
+      "Hello there.",
+      "/tmp/model.vrm",
+      "/tmp/out.mp4",
+    ];
+    const environment = { DEEPGRAM_API_KEY: "test-key" };
+
+    expect(parseCliOptions(argv, environment)).toStrictEqual({
+      deepgramApiKey: "test-key",
+      dialogueText:   "Hello there.",
+      outputPath:     "/tmp/out.mp4",
+      vrmFilePath:    "/tmp/model.vrm",
+    });
+  });
+
+  it("should drop a leading -- inserted by \"pnpm run start --\"", () => {
+    expect.assertions(1);
+
+    const argv = [
+      "node",
+      "cli.js",
+      "--",
       "Hello there.",
       "/tmp/model.vrm",
       "/tmp/out.mp4",

@@ -29,7 +29,18 @@ const parseCliOptions = (
   argv: ReadonlyArray<string>,
   environment: Readonly<Record<string, string | undefined>>,
 ): RunVroidPipelineOptions | null => {
-  const [ dialogueText, vrmFilePath, outputPath ] = argv.slice(2);
+  const rawPositionalArguments = argv.slice(2);
+
+  /*
+   * `pnpm run start -- <args>` (at least on pnpm 11.5.2) inserts a
+   * literal "--" as the first user-supplied argument rather than
+   * stripping it, unlike plain `node cli.js <args>`. Dropping exactly
+   * one leading "--" makes both invocation styles work the same way.
+   */
+  const positionalArguments = rawPositionalArguments[0] === "--"
+    ? rawPositionalArguments.slice(1)
+    : rawPositionalArguments;
+  const [ dialogueText, vrmFilePath, outputPath ] = positionalArguments;
   const deepgramApiKey = environment.DEEPGRAM_API_KEY;
 
   if (
