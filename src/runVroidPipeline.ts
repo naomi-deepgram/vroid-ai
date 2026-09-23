@@ -4,10 +4,13 @@
  * @author Naomi Carrigan
  */
 
+/* eslint-disable no-console -- the real progress reporter below exists specifically to print to the console */
+
 import { DeepgramClient } from "@deepgram/sdk";
 import {
   generateVroidVideo,
   type GenerateVroidVideoOptions,
+  type VroidPipelineProgressEvent,
 } from "./generateVroidVideo.js";
 import {
   createFfmpegVideoEncoder,
@@ -73,6 +76,91 @@ interface RunVroidPipelineOptions extends GenerateVroidVideoOptions {
 }
 
 /**
+ * Builds a progress reporter that prints each pipeline stage to the
+ * console. When stdout is a real terminal, frame-rendering progress
+ * updates in place on a single line; otherwise (piped output, a log
+ * file, or this project's own non-interactive tooling) there is no
+ * line to overwrite, so it logs one line per 10% milestone instead of
+ * one line per frame, which would otherwise be an unreadable wall of
+ * text for a long render.
+ * @returns A progress reporter ready to pass as generateVroidVideo's
+ * onProgress option.
+ */
+// eslint-disable-next-line max-lines-per-function -- the inner reportFrameProgress needs to share this closure's mutable milestone state, so it can't be split out further
+const createConsoleProgressReporter = (): (
+(event: VroidPipelineProgressEvent)=> void
+) => {
+  const isInteractive = process.stdout.isTTY;
+  let lastLoggedPercentComplete = -1;
+
+  const reportFrameProgress = (
+    frameIndex: number,
+    totalFrameCount: number,
+  ): void => {
+    const fractionComplete = frameIndex / totalFrameCount;
+    const percentComplete = Math.round(fractionComplete * 100);
+    const line = `Rendering frame ${String(frameIndex)}/`
+      + `${String(totalFrameCount)} (${String(percentComplete)}%)`;
+
+    if (isInteractive) {
+      process.stdout.write(`\r${line}`);
+      if (frameIndex === totalFrameCount) {
+        process.stdout.write("\n");
+      }
+      return;
+    }
+
+    const isNewMilestone
+      = percentComplete >= lastLoggedPercentComplete + 10
+        || frameIndex === totalFrameCount;
+    if (isNewMilestone) {
+      lastLoggedPercentComplete = percentComplete;
+      console.log(line);
+    }
+  };
+
+  return (event: VroidPipelineProgressEvent): void => {
+    switch (event.type) {
+      case "synthesising": {
+        console.log("Synthesising dialogue with Flux TTS...");
+        break;
+      }
+
+      case "synthesised": {
+        console.log(`Recovered timing for ${String(event.wordCount)} words.`);
+        break;
+      }
+
+      case "rendering": {
+        console.log(`Rendering ${String(event.totalFrameCount)} frames...`);
+        break;
+      }
+
+      case "frameRendered": {
+        reportFrameProgress(event.frameIndex, event.totalFrameCount);
+        break;
+      }
+
+      case "encoding": {
+        console.log("Encoding video with ffmpeg...");
+        break;
+      }
+
+      case "done": {
+        console.log(`Done! Wrote ${event.outputPath}`);
+        break;
+      }
+
+      // eslint-disable-next-line capitalized-comments -- v8 ignore directive must stay lowercase
+      /* v8 ignore next 2 -- @preserve */
+      default: {
+        break;
+      }
+    }
+  };
+};
+
+/**
  * Runs the full script-to-video pipeline against real infrastructure:
  * a real Deepgram client, a real headless-Playwright-rendered VRM
  * scene, and a real ffmpeg process. This is the composition root that
@@ -96,6 +184,7 @@ const runVroidPipeline = async(
 
   const generateVideoOptions: GenerateVroidVideoOptions = {
     dialogueText: options.dialogueText,
+    onProgress:   options.onProgress ?? createConsoleProgressReporter(),
     outputPath:   options.outputPath,
     ...options.frameIntervalMs === undefined
       ? {}

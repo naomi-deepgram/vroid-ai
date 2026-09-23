@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   estimateTotalDurationMs,
   generateVroidVideo,
+  type VroidPipelineProgressEvent,
 } from "../src/generateVroidVideo.js";
 import type { VrmScenePage } from "../src/render/createVrmPageFrameRenderer.js";
 import type { VideoEncoder } from "../src/render/renderVrmVideo.js";
@@ -151,6 +152,74 @@ describe("generateVroidVideo", () => {
      * interval that's ceil(400 / 33) = 13 frames.
      */
     expect(getEncodedFrames(encode)).toHaveLength(13);
+  });
+
+  it("should report every stage of progress in order", async() => {
+    expect.assertions(1);
+
+    const wordTimings: ReadonlyArray<WordTiming> = [
+      { endMs: 500, startMs: 0, word: "Hi" },
+    ];
+    const fluxTtsClient: FluxTtsClient = {
+      requestSpeech: vi.fn().mockResolvedValue({
+        audio:       Buffer.from(""),
+        wordsSpoken: wordTimings,
+      }),
+    };
+    const videoEncoder: VideoEncoder = {
+      encode: vi.fn().mockResolvedValue(undefined),
+    };
+    const vrmScenePage = createFakeVrmScenePage();
+    const events: Array<VroidPipelineProgressEvent> = [];
+
+    await generateVroidVideo(
+      { fluxTtsClient, videoEncoder, vrmScenePage },
+      {
+        dialogueText:    "Hi",
+        frameIntervalMs: 200,
+        onProgress:      (event) => {
+          events.push(event);
+        },
+        outputPath: "/tmp/out.mp4",
+      },
+    );
+
+    /*
+     * Total duration is 500 + 300 = 800ms; at a 200ms interval that's
+     * ceil(800 / 200) = 4 frames.
+     */
+    expect(events).toStrictEqual([
+      { type: "synthesising" },
+      { type: "synthesised", wordCount: 1 },
+      { totalFrameCount: 4, type: "rendering" },
+      { frameIndex: 1, totalFrameCount: 4, type: "frameRendered" },
+      { frameIndex: 2, totalFrameCount: 4, type: "frameRendered" },
+      { frameIndex: 3, totalFrameCount: 4, type: "frameRendered" },
+      { frameIndex: 4, totalFrameCount: 4, type: "frameRendered" },
+      { type: "encoding" },
+      { outputPath: "/tmp/out.mp4", type: "done" },
+    ]);
+  });
+
+  it("should work with no progress callback provided at all", async() => {
+    expect.assertions(1);
+
+    const fluxTtsClient: FluxTtsClient = {
+      requestSpeech: vi.fn().mockResolvedValue({
+        audio:       Buffer.from(""),
+        wordsSpoken: [],
+      }),
+    };
+    const encode = vi.fn().mockResolvedValue(undefined);
+    const videoEncoder: VideoEncoder = { encode };
+    const vrmScenePage = createFakeVrmScenePage();
+
+    await generateVroidVideo(
+      { fluxTtsClient, videoEncoder, vrmScenePage },
+      { dialogueText: "Hi", outputPath: "/tmp/out.mp4" },
+    );
+
+    expect(encode).toHaveBeenCalledTimes(1);
   });
 });
 

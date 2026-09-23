@@ -63,6 +63,7 @@ export {
 export type {
   GenerateVroidVideoDependencies,
   GenerateVroidVideoOptions,
+  VroidPipelineProgressEvent,
 } from "./generateVroidVideo.js";
 export {
   runVroidPipeline,

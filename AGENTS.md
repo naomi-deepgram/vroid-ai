@@ -104,14 +104,27 @@ script, split across three more files at the top of `src/`:
   little trailing silence, since neither Flux TTS's REST endpoint nor
   Listen ever report one directly. Every dependency here is injected,
   so like the three integration points above, this is unit tested with
-  100% coverage using fakes.
+  100% coverage using fakes. It also reports progress through an
+  optional `onProgress` callback (`VroidPipelineProgressEvent`: dialogue
+  synthesised, rendering started with a total frame count, each frame
+  rendered, encoding started, done) so a caller can show feedback
+  without this pure layer needing to know anything about how; `renderVrmVideo.ts`
+  itself only exposes the two lower-level `onFrameRendered`/
+  `onEncodingStart` callbacks this is built from.
 - `runVroidPipeline.ts` is the real composition root: it constructs a
   real `DeepgramClient`, a real `PlaywrightVrmScenePage`, and a real
   ffmpeg-backed `VideoEncoder`, and calls `generateVroidVideo` with
   them, closing the scene page in a `finally` block regardless of
-  success or failure. It also contains the one piece of real
-  `@deepgram/sdk` friction found so far: the SDK's Listen response
-  types weren't authored with this project's `exactOptionalPropertyTypes`
+  success or failure. When a caller doesn't supply its own
+  `onProgress`, it defaults to a real console reporter: plain log lines
+  for each stage, and frame-rendering progress that updates in place on
+  one line when stdout is a real terminal (`process.stdout.isTTY`), or
+  logs one line per 10% milestone otherwise (piped output, a log file,
+  or this project's own non-interactive tooling), rather than either
+  staying silent or printing a wall of one-line-per-frame noise. It
+  also contains the one piece of real `@deepgram/sdk` friction found
+  so far: the SDK's Listen response types weren't authored with this
+  project's `exactOptionalPropertyTypes`
   TypeScript option in mind, so a real `DeepgramClient` instance can't
   be passed to `createDeepgramFluxTtsClient` through a plain structural
   cast. `adaptDeepgramClient` in that file contains the one necessary

@@ -46,11 +46,30 @@ interface GenerateVroidVideoDependencies {
 }
 
 /**
+ * A single point of progress through a generateVroidVideo run, in the
+ * order a caller can expect to receive them. How (or whether) to
+ * display these is entirely up to the caller; this pipeline only
+ * reports what happened and, where relevant, how much work is left.
+ */
+type VroidPipelineProgressEvent =
+  | { readonly type: "synthesising" }
+  | { readonly type: "synthesised"; readonly wordCount: number }
+  | { readonly totalFrameCount: number; readonly type: "rendering" }
+  | {
+    readonly frameIndex:      number;
+    readonly totalFrameCount: number;
+    readonly type:            "frameRendered";
+  }
+  | { readonly type: "encoding" }
+  | { readonly outputPath: string; readonly type: "done" };
+
+/**
  * Options for a single generateVroidVideo run.
  */
 interface GenerateVroidVideoOptions {
   readonly dialogueText:     string;
   readonly frameIntervalMs?: number;
+  readonly onProgress?:      (event: VroidPipelineProgressEvent)=> void;
   readonly outputPath:       string;
 }
 
@@ -95,23 +114,45 @@ const generateVroidVideo = async(
   options: GenerateVroidVideoOptions,
 ): Promise<void> => {
   const frameIntervalMs = options.frameIntervalMs ?? defaultFrameIntervalMs;
+  const onProgress = options.onProgress ?? ((): void => {
+    return undefined;
+  });
 
+  onProgress({ type: "synthesising" });
   const { audio, wordTimings } = await requestFluxTtsAudio(
     dependencies.fluxTtsClient,
     options.dialogueText,
   );
+  onProgress({ type: "synthesised", wordCount: wordTimings.length });
+
   const visemeCues = buildVisemeTimeline(wordTimings);
   const frameRenderer = createVrmPageFrameRenderer(
     dependencies.vrmScenePage,
     visemeCues,
   );
+  const totalDurationMs = estimateTotalDurationMs(wordTimings);
+  const totalFrameCount = Math.ceil(totalDurationMs / frameIntervalMs);
+
+  onProgress({ totalFrameCount: totalFrameCount, type: "rendering" });
 
   await renderVrmVideo(frameRenderer, dependencies.videoEncoder, {
     audio:           audio,
     frameIntervalMs: frameIntervalMs,
+    onEncodingStart: () => {
+      onProgress({ type: "encoding" });
+    },
+    onFrameRendered: (frameIndex, renderedTotalFrameCount) => {
+      onProgress({
+        frameIndex:      frameIndex,
+        totalFrameCount: renderedTotalFrameCount,
+        type:            "frameRendered",
+      });
+    },
     outputPath:      options.outputPath,
-    totalDurationMs: estimateTotalDurationMs(wordTimings),
+    totalDurationMs: totalDurationMs,
   });
+
+  onProgress({ outputPath: options.outputPath, type: "done" });
 };
 
 export {
@@ -119,4 +160,5 @@ export {
   generateVroidVideo,
   type GenerateVroidVideoDependencies,
   type GenerateVroidVideoOptions,
+  type VroidPipelineProgressEvent,
 };
