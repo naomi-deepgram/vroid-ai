@@ -15,6 +15,11 @@ import {
 import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
 import { chromium } from "playwright";
+import {
+  buildSceneHtml,
+  buildSceneScript,
+  type ViewportSize,
+} from "./buildVrmSceneAssets.js";
 import type {
   VisemeExpressionWeights,
 } from "./applyVisemeToExpressionWeights.js";
@@ -64,19 +69,11 @@ const threeRoot = findPackageRoot("three");
 const threeVrmRoot = findPackageRoot("@pixiv/three-vrm");
 
 /**
- * The size, in pixels, of the canvas a PlaywrightVrmScenePage renders
- * and captures frames from.
- */
-interface ViewportSize {
-  readonly height: number;
-  readonly width:  number;
-}
-
-/**
  * Options controlling how createPlaywrightVrmScenePage renders a VRM.
  */
 interface CreatePlaywrightVrmScenePageOptions {
-  readonly viewportSize?: ViewportSize;
+  readonly physicsSettleSeconds?: number;
+  readonly viewportSize?:         ViewportSize;
 }
 
 /**
@@ -115,6 +112,7 @@ interface VrmSceneAssets {
 }
 
 const defaultViewportSize: ViewportSize = { height: 512, width: 512 };
+const defaultPhysicsSettleSeconds = 3;
 
 /*
  * This sandboxed environment has no GPU, so headless Chromium needs a
@@ -132,117 +130,6 @@ const contentTypesByExtension = new Map<string, string>([
   [ ".html", "text/html" ],
   [ ".js", "text/javascript" ],
 ]);
-
-/**
- * Builds the HTML page the browser loads. It sets up an import map so
- * the bare "three" and "@pixiv/three-vrm" specifiers those packages'
- * own ESM builds use resolve to the vendor files this server serves,
- * and a canvas sized to match viewportSize for the scene script to
- * render into.
- * @param viewportSize - The pixel size of the canvas to create.
- * @returns The HTML document to serve at "/".
- */
-const buildSceneHtml = (viewportSize: ViewportSize): string => {
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<script type="importmap">
-{
-  "imports": {
-    "three": "/vendor/three/build/three.module.js",
-    "three/": "/vendor/three/",
-    "@pixiv/three-vrm": "/vendor/three-vrm/lib/three-vrm.module.js"
-  }
-}
-</script>
-</head>
-<body>
-<canvas
-  id="vroid-canvas"
-  width="${String(viewportSize.width)}"
-  height="${String(viewportSize.height)}"
-></canvas>
-<script type="module" src="/scene.js"></script>
-</body>
-</html>
-`;
-};
-
-/**
- * Builds the browser-side scene script: it loads the VRM served at
- * "/model.vrm", frames a camera on it, and exposes two globals for the
- * Node side to drive rendering through page.evaluate. __vroidReady
- * resolves once the model has loaded; __vroidApplyFrame applies a
- * single frame's expression weights and idle motion offset and renders
- * it to the canvas.
- * @returns The scene script to serve at "/scene.js".
- */
-// eslint-disable-next-line max-lines-per-function -- one big template literal, not real branching complexity
-const buildSceneScript = (): string => {
-  return `
-import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-
-const canvas = document.querySelector("#vroid-canvas");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(canvas.width, canvas.height, false);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x808080);
-
-const camera = new THREE.PerspectiveCamera(
-  30,
-  canvas.width / canvas.height,
-  0.1,
-  20,
-);
-
-scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-const directional = new THREE.DirectionalLight(0xffffff, 1.5);
-directional.position.set(1, 1, 1);
-scene.add(directional);
-
-const loader = new GLTFLoader();
-loader.register((parser) => new VRMLoaderPlugin(parser));
-
-let vrm = null;
-
-globalThis.__vroidReady = loader.loadAsync("/model.vrm").then((gltf) => {
-  vrm = gltf.userData.vrm;
-  VRMUtils.rotateVRM0(vrm);
-  scene.add(vrm.scene);
-
-  const box = new THREE.Box3().setFromObject(vrm.scene);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const headHeight = box.max.y - size.y * 0.08;
-
-  camera.position.set(center.x, headHeight, size.z + size.y * 0.6);
-  camera.lookAt(center.x, headHeight, center.z);
-});
-
-globalThis.__vroidApplyFrame = (expressionWeights, idleMotionOffset) => {
-  for (const [ name, value ] of Object.entries(expressionWeights)) {
-    vrm.expressionManager?.setValue(name, value);
-  }
-
-  const chest = vrm.humanoid?.getNormalizedBoneNode("chest");
-  if (chest) {
-    chest.scale.setScalar(idleMotionOffset.chestScale);
-  }
-
-  const head = vrm.humanoid?.getNormalizedBoneNode("head");
-  if (head) {
-    head.rotation.x = idleMotionOffset.headTiltRadians;
-  }
-
-  vrm.update(1 / 30);
-  renderer.render(scene, camera);
-};
-`;
-};
 
 /**
  * Resolves a request path under "/vendor/..." to the real file it
@@ -373,15 +260,18 @@ const handleSceneServerRequest = async(
  * local file.
  * @param vrmFilePath - Local path of the .vrm file to serve.
  * @param viewportSize - The pixel size of the canvas to create.
+ * @param physicsSettleSeconds - How much simulated time to let spring
+ * bones settle for before the scene page is considered ready.
  * @returns The running server and the local port it bound to.
  */
 const startVrmSceneServer = async(
   vrmFilePath: string,
   viewportSize: ViewportSize,
+  physicsSettleSeconds: number,
 ): Promise<{ port: number; server: Server }> => {
   const assets: VrmSceneAssets = {
     sceneHtml:   buildSceneHtml(viewportSize),
-    sceneScript: buildSceneScript(),
+    sceneScript: buildSceneScript(physicsSettleSeconds),
     vrmFilePath: vrmFilePath,
   };
 
@@ -442,9 +332,12 @@ const createPlaywrightVrmScenePage = async(
   options: CreatePlaywrightVrmScenePageOptions = {},
 ): Promise<PlaywrightVrmScenePage> => {
   const viewportSize = options.viewportSize ?? defaultViewportSize;
+  const physicsSettleSeconds
+    = options.physicsSettleSeconds ?? defaultPhysicsSettleSeconds;
   const { port, server } = await startVrmSceneServer(
     vrmFilePath,
     viewportSize,
+    physicsSettleSeconds,
   );
   const browser = await chromium.launch({
     args: chromiumSoftwareRenderingArguments,

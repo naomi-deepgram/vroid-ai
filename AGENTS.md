@@ -28,7 +28,16 @@ integration point is also implemented now, split across two files in
   with `@pixiv/three-vrm`'s `VRMLoaderPlugin`, and exposes an
   `applyFrame`/`captureFrame` page. It handles VRM 0.0 models
   transparently (`VRMUtils.rotateVRM0`, legacy `blendShapeMaster`
-  presets) as well as VRM 1.0.
+  presets) as well as VRM 1.0. The browser-side scene HTML/script it
+  serves are built by the pure, independently unit-tested
+  `buildVrmSceneAssets.ts`, which is also where the model gets relaxed
+  out of its default T-pose (VRM humanoid rigs load bind-posed, arms
+  straight out to the sides, via rotating each normalized upper/lower
+  arm bone) and where spring bones (hair, breast physics, and similar
+  jiggle bones) get a `physicsSettleSeconds` (default 3) head start of
+  simulated-time `vrm.update()` steps before `__vroidReady` resolves,
+  so the visible snap/overshoot those bones show right after a model
+  loads has already settled out before any real frame is captured.
 - `createVrmPageFrameRenderer.ts` is the pure orchestration layer: it
   looks up the active viseme for a timestamp (`findActiveViseme.ts`),
   converts it to expression weights, computes the idle motion offset,
