@@ -18,6 +18,8 @@ export default defineConfig({
         "src/index.ts",
         "src/render/createPlaywrightVrmScenePage.ts",
         "src/render/createSystemFfmpegRunner.ts",
+        "src/runVroidPipeline.ts",
+        "src/cli.ts",
       ],
       include:  [ "src/**/*.ts" ],
       provider: "v8",

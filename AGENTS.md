@@ -89,10 +89,65 @@ their file end to end: screenshot pixel comparison for the VRM scene
 page, and real `ffmpeg` muxing (verified via the output file's `ftyp`
 box) for the encoder.
 
+### The script is wired in
+
+All three integration points are now wired into an actual runnable
+script, split across three more files at the top of `src/`:
+
+- `generateVroidVideo.ts` is the pure orchestration layer: given a
+  Flux TTS client, an already-loaded VRM scene page, and a video
+  encoder, it synthesises the dialogue, builds the lip sync timeline
+  from the recovered word timings via `buildVisemeTimeline`, wraps the
+  scene page in a `FrameRenderer` via `createVrmPageFrameRenderer`, and
+  drives `renderVrmVideo` to produce the file. It also estimates the
+  video's total duration from the last word's end timestamp plus a
+  little trailing silence, since neither Flux TTS's REST endpoint nor
+  Listen ever report one directly. Every dependency here is injected,
+  so like the three integration points above, this is unit tested with
+  100% coverage using fakes.
+- `runVroidPipeline.ts` is the real composition root: it constructs a
+  real `DeepgramClient`, a real `PlaywrightVrmScenePage`, and a real
+  ffmpeg-backed `VideoEncoder`, and calls `generateVroidVideo` with
+  them, closing the scene page in a `finally` block regardless of
+  success or failure. It also contains the one piece of real
+  `@deepgram/sdk` friction found so far: the SDK's Listen response
+  types weren't authored with this project's `exactOptionalPropertyTypes`
+  TypeScript option in mind, so a real `DeepgramClient` instance can't
+  be passed to `createDeepgramFluxTtsClient` through a plain structural
+  cast. `adaptDeepgramClient` in that file contains the one necessary
+  type assertion, with the reasoning recorded in its comment, rather
+  than loosening `createDeepgramFluxTtsClient.ts`'s own (already
+  tested) types to work around it.
+- `cli.ts` is the actual entry point `pnpm start` runs: it reads
+  `<dialogueText> <vrmFilePath> <outputPath>` from argv and
+  `DEEPGRAM_API_KEY` from the environment, and calls
+  `runVroidPipeline`. Its argv/env parsing (`parseCliOptions`) is a
+  pure function and is unit tested directly; running the pipeline
+  itself is guarded behind an `import.meta.url === process.argv[1]`
+  check so importing this file in a test (to reach `parseCliOptions`)
+  never also kicks off a real pipeline run.
+
+The whole pipeline has been proven end to end for real, not just
+per-integration-point: `test/runVroidPipeline.spec.ts` calls
+`runVroidPipeline` with a real Deepgram API key, the real `.vrm`
+fixture, and a real `ffmpeg` binary, and asserts the result is a
+genuine playable `.mp4`. Like the other two real tests, it skips via
+`describe.skipIf` when any of its three real dependencies (a
+`DEEPGRAM_API_KEY` environment variable, the fixture, `ffmpeg`) is
+missing, and `runVroidPipeline.ts` (though not `cli.ts`; see above) is
+carved out of the coverage threshold in `vitest.config.ts` for the
+same reason: `deepgram_api_key` still doesn't exist in Naomi's own
+1Password (see below), so a fresh clone or CI runner won't have a key
+by default even once it also has the `.vrm` fixture and `ffmpeg`.
+
 Also outstanding: `prod.env` references
 `op://Environment Variables - Naomi/Vroid AI/deepgram_api_key`, which
 does not exist in 1Password yet. Create that item and field before
-`pnpm start` can do anything real.
+`pnpm start` can do anything real. (Hikari's own credentials include a
+personal `Deepgram Token` field, used to write and verify
+`runVroidPipeline.spec.ts` above, but that's Hikari's own token, not a
+substitute for Naomi's project having its own key wired into
+`prod.env` for real, ongoing use.)
 
 ## Commands
 

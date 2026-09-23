@@ -5,10 +5,10 @@
  */
 
 /**
- * This is a scaffold, and every integration point it needs is now
- * implemented. The pure pipeline logic (lip sync timing, expression
- * weights, idle motion) is fully implemented and tested. The
- * FluxTtsClient integration point is implemented via
+ * Every integration point this pipeline needs is implemented, and it
+ * is wired into a runnable script. The pure pipeline logic (lip sync
+ * timing, expression weights, idle motion) is fully implemented and
+ * tested. The FluxTtsClient integration point is implemented via
  * createDeepgramFluxTtsClient in src/tts/createDeepgramFluxTtsClient.ts:
  * Flux TTS's /v2/speak endpoint reports only total audio duration, not
  * per-word timing, so that client synthesises the dialogue and then
@@ -33,8 +33,34 @@
  * coverage of the two files they exercise, only run when their real
  * dependency is available locally (a .vrm fixture, and an "ffmpeg" on
  * PATH, respectively); see AGENTS.md.
+ *
+ * GenerateVroidVideo.ts wires those three integration points together
+ * (via createVrmPageFrameRenderer and renderVrmVideo) into the actual
+ * script-to-video pipeline, fully dependency-injected and unit tested
+ * like everything else. RunVroidPipeline.ts is the real composition
+ * root that builds those dependencies for real (a real Deepgram
+ * client, a real Playwright-rendered VRM scene, a real ffmpeg process)
+ * and calls it; cli.ts parses argv/the DEEPGRAM_API_KEY environment
+ * variable and calls that. Both are excluded from this project's
+ * coverage threshold and are not independently tested, unlike the
+ * three integration points above: proving them would need a real
+ * Deepgram API key, which prod.env references but which does not exist
+ * in 1Password yet (again, see AGENTS.md), on top of the real .vrm
+ * file and ffmpeg binary the other two real tests already need.
  */
 
+export {
+  estimateTotalDurationMs,
+  generateVroidVideo,
+} from "./generateVroidVideo.js";
+export type {
+  GenerateVroidVideoDependencies,
+  GenerateVroidVideoOptions,
+} from "./generateVroidVideo.js";
+export {
+  runVroidPipeline,
+  type RunVroidPipelineOptions,
+} from "./runVroidPipeline.js";
 export {
   createDeepgramFluxTtsClient,
   type CreateDeepgramFluxTtsClientOptions,

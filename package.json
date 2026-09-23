@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint src test --max-warnings 0",
-    "start": "op run --env-file=prod.env -- node prod/index.js",
+    "start": "op run --env-file=prod.env -- node prod/cli.js",
     "test": "vitest run --coverage"
   },
   "keywords": [],
